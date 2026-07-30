@@ -1,10 +1,11 @@
-# The Book class represents a single book entry in our "API".
-# Each Book has:
-#   - id: a unique identifier to easily identify duplicates if accidentally added
-#   - book_name: the title of the book
-#   - author
-#   - publisher
-# Which is all the information required for the excercise.
+# Second version of the assigment, with refinements from your input
+
+from flask import Flask, request, jsonify
+
+app = Flask(__name__)
+
+# ------------------------------------------------------------
+# Book Class
 # ------------------------------------------------------------
 class Book:
     def __init__(self, id, book_name, author, publisher):
@@ -13,101 +14,104 @@ class Book:
         self.author = author
         self.publisher = publisher
 
-    def __repr__(self):
-        # This returns a string representation for readability when printing.
-        return f"{self.id}: {self.book_name} | {self.author} | {self.publisher}"
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "book_name": self.book_name,
+            "author": self.author,
+            "publisher": self.publisher
+        }
 
-
-# "Database" Storage
 # ------------------------------------------------------------
-# Instead of storing books in a real database, we'll use a simple list to hold our Book objects.
-# This is done assuming that we weren't actually intended to use a database for this exercise or an external storage system.
+# In-Memory "Database"
 # ------------------------------------------------------------
 books = []
 
-# CREATE Operation
-# ------------------------------------------------------------
-# Purpose:
-#   Adds a new Book object to our storage list.
-#
-# Parameters:
-#   id, name, author, publisher — all required to build a Book.
-#
-# Returns:
-#   The newly created Book object.
-# ------------------------------------------------------------
-def create_book(id, name, author, publisher):
-    book = Book(id, name, author, publisher)
-    books.append(book)
-    return book
-
-# READ Operation
-# ------------------------------------------------------------
-# Retrieves a Book object by its id by looping through the list of books and 
-# returning the one that matches the requested id. If none match, returns None.
-# ------------------------------------------------------------
-def read_book(id):
+def find_book(book_id):
     for b in books:
-        if b.id == id:
+        if b.id == book_id:
             return b
-    return None  # Book not found
+    return None
 
-# UPDATE Operation
 # ------------------------------------------------------------
-# Modifies an existing Book object. First retrieves the book using read_book().
-# Then updates only the fields that were provided.
-# Note:
-#   - If the book doesn't exist, returns None.
-#   - Optional parameters allow partial updates.
+# API ROUTES
 # ------------------------------------------------------------
-def update_book(id, name=None, author=None, publisher=None):
-    book = read_book(id)
+
+# GET /books  → return all books
+@app.get("/books")
+def get_books():
+    return jsonify([b.to_dict() for b in books]), 200
+
+
+# GET /books/<id>  → return one book
+@app.get("/books/<int:book_id>")
+def get_book(book_id):
+    book = find_book(book_id)
     if book is None:
-        return None  # Cannot update something that doesn't exist
+        return jsonify({"error": "Book not found"}), 404
+    return jsonify(book.to_dict()), 200
 
-    # Only update fields that were actually passed in
-    if name is not None:
-        book.book_name = name
-    if author is not None:
-        book.author = author
-    if publisher is not None:
-        book.publisher = publisher
 
-    return book
+# POST /books  → create a new book
+@app.post("/books")
+def create_book():
+    data = request.json
 
-# DELETE Operation
-# ------------------------------------------------------------
-# Removes a Book object from storage based on its id.
-# Rebuilds the list, excluding the book with the matching id.
-# ------------------------------------------------------------
-def delete_book(id):
+    # Validate required fields
+    required = ["id", "book_name", "author", "publisher"]
+    if not all(field in data for field in required):
+        return jsonify({"error": "Missing required fields"}), 400
+
+    # Prevent duplicate IDs
+    if find_book(data["id"]) is not None:
+        return jsonify({"error": "Book with this ID already exists"}), 409
+
+    new_book = Book(
+        data["id"],
+        data["book_name"],
+        data["author"],
+        data["publisher"]
+    )
+    books.append(new_book)
+
+    return jsonify(new_book.to_dict()), 201
+
+
+# PUT /books/<id>  → update an existing book
+@app.put("/books/<int:book_id>")
+def update_book(book_id):
+    book = find_book(book_id)
+    if book is None:
+        return jsonify({"error": "Book not found"}), 404
+
+    data = request.json
+
+    # Update only provided fields
+    if "book_name" in data:
+        book.book_name = data["book_name"]
+    if "author" in data:
+        book.author = data["author"]
+    if "publisher" in data:
+        book.publisher = data["publisher"]
+
+    return jsonify(book.to_dict()), 200
+
+
+# DELETE /books/<id>  → delete a book
+@app.delete("/books/<int:book_id>")
+def delete_book(book_id):
     global books
-    books = [b for b in books if b.id != id]
+    book = find_book(book_id)
+
+    if book is None:
+        return jsonify({"error": "Book not found"}), 404
+
+    books = [b for b in books if b.id != book_id]
+    return jsonify({"message": "Book deleted"}), 200
 
 
-# Demonstration of the program's functionality
 # ------------------------------------------------------------
-
-# CREATE
-create_book(1, "Dune", "Frank Herbert", "Chilton Books")
-create_book(2, "1984", "George Orwell", "Secker & Warburg")
-
-print("All Books:")
-for b in books:
-    print(b)
-
-# READ
-print("\nRead Book 1:")
-print(read_book(1))
-
-# UPDATE
-print("\nUpdate Book 2:")
-update_book(2, author="G. Orwell")
-for b in books:
-    print(b)
-
-# DELETE
-print("\nDelete Book 1:")
-delete_book(1)
-for b in books:
-    print(b)
+# Run the server
+# ------------------------------------------------------------
+if __name__ == "__main__":
+    app.run(debug=True)
